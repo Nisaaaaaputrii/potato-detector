@@ -1,12 +1,18 @@
 import streamlit as st
-from tensorflow.keras.models import load_model
 import numpy as np
-from PIL import Image
 import cv2
+from PIL import Image
+import joblib
+from tensorflow.keras.models import load_model
+from skimage.feature import graycomatrix, graycoprops
 import scipy.stats
-from sklearn.preprocessing import StandardScaler
 
-# Fungsi untuk preprocessing dan ekstraksi fitur GLCM + statistik
+# --- Load Model dan Tools ---
+model = load_model("model_cnn_glcm.h5")
+scaler = joblib.load("scaler.pkl")
+label_encoder = joblib.load("label_encoder.pkl")
+
+# --- Fungsi preprocessing gambar ---
 def load_and_preprocess_image(image):
     img = np.array(image.convert("RGB"))
     img = cv2.resize(img, (128, 128))
@@ -14,8 +20,8 @@ def load_and_preprocess_image(image):
     return gray
 
 def extract_glcm_features(gray_image):
-    from skimage.feature import graycomatrix, graycoprops
-    glcm = graycomatrix(gray_image, distances=[1], angles=[0], levels=256, symmetric=True, normed=True)
+    glcm = graycomatrix(gray_image, distances=[1], angles=[0], levels=256,
+                        symmetric=True, normed=True)
     features = [
         graycoprops(glcm, 'contrast')[0, 0],
         graycoprops(glcm, 'dissimilarity')[0, 0],
@@ -26,7 +32,7 @@ def extract_glcm_features(gray_image):
     ]
     return features
 
-def additional_statistical_features(gray_img):
+def extract_statistical_features(gray_img):
     mean = np.mean(gray_img)
     std = np.std(gray_img)
     var = np.var(gray_img)
@@ -34,27 +40,26 @@ def additional_statistical_features(gray_img):
     kurt = scipy.stats.kurtosis(gray_img.ravel())
     return [mean, std, var, skew, kurt]
 
-# Load model & scaler (buat scaler manual jika perlu)
-model = load_model("model_cnn_glcm.h5")
+# --- Streamlit UI ---
+st.title("🟢 Deteksi Penyakit Daun Kentang (CNN + GLCM)")
+st.write("Upload gambar daun kentang untuk mengetahui jenis penyakitnya.")
 
-st.title("🟢 Identifikasi Penyakit Daun Kentang (GLCM + CNN)")
-
-uploaded_file = st.file_uploader("Unggah gambar daun kentang", type=["jpg", "png", "jpeg"])
+uploaded_file = st.file_uploader("Upload gambar", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
     st.image(image, caption="Gambar Diupload", use_column_width=True)
 
+    # Preprocessing
     gray = load_and_preprocess_image(image)
     glcm_feat = extract_glcm_features(gray)
-    stat_feat = additional_statistical_features(gray)
-    features = np.array(glcm_feat + stat_feat).reshape(1, -1)
+    stat_feat = extract_statistical_features(gray)
+    all_features = np.array(glcm_feat + stat_feat).reshape(1, -1)
 
-    # Normalisasi fitur
-    scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(features)
+    # Normalisasi dan prediksi
+    scaled_features = scaler.transform(all_features)
+    prediction = model.predict(scaled_features)
+    predicted_label = label_encoder.inverse_transform([np.argmax(prediction)])[0]
 
-    prediction = model.predict(features_scaled)
-    label = ['Early Blight', 'Late Blight', 'Healthy'][np.argmax(prediction)]
-
-    st.success(f"Hasil Prediksi: **{label}**")
+    st.subheader("🔍 Hasil Prediksi:")
+    st.success(f"Penyakit terdeteksi: **{predicted_label}**")
