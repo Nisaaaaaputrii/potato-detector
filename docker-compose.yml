@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  potato-detector:
+    build: .
+    environment:
+      # Set your ngrok auth token here
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    # No ports exposed to host
+    # ports:
+    #   - "8501:8501"  # Commented out - ngrok handles external access
+    volumes:
+      - ./logs:/app/logs  # Optional: for logging
+    restart: unless-stopped
